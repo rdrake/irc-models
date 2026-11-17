@@ -22,7 +22,7 @@ MODEL = next((m for m in (os.path.join(HERE, "..", "..", "models", "handshake", 
                           os.path.join(HERE, "..", "model", "SpecHandshake.tla")) if os.path.exists(m)),
              os.path.join(HERE, "..", "..", "models", "handshake", "SpecHandshake.tla"))
 JAR = os.environ.get("TLA_JAR", os.path.expanduser("~/tools/formal/tla2tools.jar"))
-# On the cluster: TLC_JAVA="apptainer exec --bind /project temurin21.sif java"
+# On a test runner: TLC_JAVA="apptainer exec --bind <run root> temurin21.sif java"
 JAVA = os.environ.get("TLC_JAVA", "java").split()
 # Heap per TLC run (one per trace, -j at a time): TLC_XMX="3g" on the cluster.
 if os.environ.get("TLC_XMX"):

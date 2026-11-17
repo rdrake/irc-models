@@ -532,8 +532,8 @@ def main():
     client = opt("--client", "hexdroid")
     if client not in ("hexdroid", "textual"):
         sys.exit("--client must be hexdroid or textual")
-    hexdroid = os.path.expanduser(opt("--hexdroid", "~/workspace/afternet/HexDroid-latest"))
-    textual = os.path.expanduser(opt("--textual", "~/workspace/afternet/Textual-NG"))
+    hexdroid = os.path.expanduser(opt("--hexdroid", "../HexDroid"))
+    textual = os.path.expanduser(opt("--textual", "../Textual-NG"))
     tls_ok = client == "hexdroid"           # SocketTransport (Textual) is plain TCP only
     pfx = "hx" if client == "hexdroid" else "tx"
     work = tempfile.mkdtemp(prefix="spec-server-")

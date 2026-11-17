@@ -180,7 +180,7 @@ SrvMech ==
 
 \* S1-13 covers every AUTHENTICATE line after a successful login, not only
 \* an opener: without reauth, a response or `*` that finds no exchange is
-\* also rejected with 907 (found by trace validation against Ergo, D21).
+\* also rejected with 907 (found by trace validation, D21).
 Late907 == srv.authed /\ ~Reauth /\ srv.sasl \notin Active
 
 \* D24: SASL lines carry no exchange identifier, so a response that finds no

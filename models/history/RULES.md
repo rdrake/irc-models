@@ -4,7 +4,7 @@ Model (a) of the queue (`../formal-spec/QUEUE.md`). It uses the same method as t
 spec model:
 - every normative sentence in scope, with file:line;
 - one model built from this text alone;
-- witnesses, mutants and Codex review;
+- witnesses, mutants and independent review;
 - trace validation against Ergo and nefarious2;
 - refinement of Seance's code: `client/js/irc/catchup.ts`, pending messages and labels.
 

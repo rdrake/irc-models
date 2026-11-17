@@ -200,7 +200,7 @@ class Checker:
 
     def resolve(self, mid):
         """A wire msgid -> store Item.  A replayed event may carry a derived
-        id (Ergo's HistServ prefixes '_'); that is matched and reported."""
+        id (the stored id with a prefix); that is matched and reported."""
         if mid in self.bykey:
             return self.bykey[mid], False
         for pre in ("_",):

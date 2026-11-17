@@ -97,7 +97,7 @@ Burst(n) ==
         ELSE <<>>)
     \o <<M("376", "")>>
 
-\* D9 (nefarious2): what was set before registration is dropped at its end
+\* D9 (server choice): what was set before registration is dropped at its end
 \* if batch was not negotiated by then.
 SWelcome ==
     /\ Ready /\ PassOK
@@ -335,7 +335,7 @@ RuleMetaCarries ==
      /\ \E i \in Pos("S", "761") : hist[i].m.a = "*" /\ i < First("S", "001"))
     => \E k \in Pos("S", "KV") : First("S", "001") < k /\ k < First("S", "376")
 
-\* D9 (server, nefarious2): registration completed without batch holds
+\* D9 (server choice): registration completed without batch holds
 \* nothing set before it, and sends no metadata batch.
 RuleDropWithoutBatch == (srv.phase \in {"burst", "reg"} /\ ~srv.batch) => ~srv.pre
 RuleNoMetaBatchWithoutBatch == ~srv.batch => ~Seen("S", "BATCH+")
