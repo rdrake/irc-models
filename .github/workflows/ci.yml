@@ -1,0 +1,59 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  scrub:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scrub
+        env:
+          SCRUB_DENYLIST_TEXT: ${{ secrets.SCRUB_DENYLIST }}
+        run: python3 ci/scrub.py
+
+  checkers:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Byte-compile every script
+        run: python3 -m compileall -q harness check runner run.py compare.py ci
+      - name: Labeled-response checker self-test
+        run: python3 check/labeled-response/test_check_lr.py
+
+  sany:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Fetch tla2tools.jar
+        run: curl -fsSL -o tla2tools.jar https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar
+      - name: Parse every module with SANY
+        run: |
+          fail=0
+          for area in models/*/; do
+            work=$(mktemp -d)
+            cp "$area"*.tla "$work"/
+            [ -d "$area/mutants" ] && cp "$area"mutants/*.tla "$work"/ 2>/dev/null
+            for f in "$work"/*.tla; do
+              m=$(basename "$f")
+              if ! (cd "$work" && java -cp "$GITHUB_WORKSPACE/tla2tools.jar" tla2sany.SANY "$m" > "$m.log" 2>&1) \
+                 || grep -qE "Semantic errors|Parsing or semantic analysis failed|Fatal errors" "$work/$m.log"; then
+                echo "::error file=$area$m::SANY failed on $m"; cat "$work/$m.log"; fail=1
+              fi
+            done
+            rm -rf "$work"
+          done
+          exit $fail

@@ -1,0 +1,30 @@
+# Copy to config.toml (git ignores it) and fill in. Nothing in this file is
+# read by the models; run.py and runner/remote.py turn it into the flags the
+# recorders and the runner scripts already take.
+
+# One table per server under test. run.py --server NAME picks one.
+[servers.local]
+host = "127.0.0.1"
+port = 6667
+tls = false
+label = "my-ircd"              # free text written into every trace's meta record
+password = ""                  # connection password, for the PASS scenarios (skipped if empty)
+settle = 0.5                   # handshake: seconds of server silence that end a step
+                               # (use about 2.5 for a server with fake lag)
+# Two test accounts, USER:PASSWORD, for SASL and for history's logged-in roles.
+# Use throwaway accounts on a test server: passwords never reach a trace.
+accounts = ["acct1:secret1", "acct2:secret2"]
+# Shell commands that take the server's SASL backend away and bring it back,
+# for the cap-notify scenarios. Leave empty to skip them.
+backend_down = ""
+backend_up = ""
+
+# The test runner: a Slurm cluster reached over ssh. Only runner/remote.py
+# reads this table.
+[runner]
+ssh = "user@login.example.org"
+root = "/path/on/the/runner/irc-models-runs"   # run folders are created under it
+partition = ""                 # passed as sbatch -p, if set
+account = ""                   # passed as sbatch -A, if set
+image = "temurin21.sif"        # Apptainer image with a JDK, inside root
+tla_jar = "tla2tools.jar"      # inside root
