@@ -2,7 +2,7 @@
 """Run TLC jobs on the test runner (a Slurm cluster reached over ssh).
 
   remote.py sync   AREA [--rev REV]          copy one model area, pinned, to a new run folder
-  remote.py submit RUN SCRIPT [ARGS ...]     sbatch runner/slurm/SCRIPT in that run folder
+  remote.py submit RUN SCRIPT [--env K=V] [ARGS ...]   sbatch runner/slurm/SCRIPT in that run folder
   remote.py fetch  RUN DEST                  copy the run folder's logs and summaries back
 
 Settings come from config.toml's [runner] table (see config.example.toml):
@@ -12,10 +12,10 @@ partition and account. None of them is written into this repository.
 `sync` takes the files from git at REV (default HEAD), not from the working
 tree, and names the run folder <area>-<short sha>, so every run says exactly
 which version of the model it checked and an old run folder is never reused
-for a newer model. The runner's JDK image and tla2tools.jar are linked into
-the folder from [runner] root.
+for a newer model. The runner's JDK image and tla2tools.jar are hard-linked
+into the folder from [runner] root.
 """
-import argparse, io, os, subprocess, sys, tarfile
+import argparse, io, os, shlex, subprocess, sys, tarfile
 
 try:
     import tomllib
@@ -26,16 +26,20 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 
 # What each area's run folder holds: (repository path, folder path) pairs. A
-# model is copied both to the top (tlc-bundle, tlc-resume) and to model/ (the
-# trace checkers, which look for ../model from their own folder).
+# model and its mutants are copied to the top (tlc-bundle and tlc-resume run
+# <module>.tla from RUN_ROOT) and the model again to model/ (the trace
+# checkers look for ../model from their own folder).
 AREAS = {
-    "handshake": [("models/handshake", "."), ("models/handshake", "model"),
-                  ("check/handshake", "conformance"), ("runner/slurm", ".")],
-    "registration": [("models/registration", "."), ("runner/slurm", ".")],
-    "sasl": [("models/sasl", "."), ("runner/slurm", ".")],
+    "handshake": [("models/handshake", "."), ("models/handshake/mutants", "."),
+                  ("models/handshake", "model"), ("check/handshake", "conformance"),
+                  ("runner/slurm", ".")],
+    "registration": [("models/registration", "."), ("models/registration/mutants", "."),
+                     ("runner/slurm", ".")],
+    "sasl": [("models/sasl", "."), ("models/sasl/mutants", "."), ("runner/slurm", ".")],
     "history": [("models/history", "."), ("models/history", "model"),
-                ("check/history-catchup", "."), ("check/history-servers", "servers"),
-                ("harness/history-servers", "servers"), ("runner/slurm", ".")],
+                ("check/history-catchup", "."), ("harness/history-catchup", "."),
+                ("check/history-servers", "servers"), ("harness/history-servers", "servers"),
+                ("runner/slurm", ".")],
 }
 
 
@@ -70,14 +74,23 @@ def sync(a):
             raw = git("archive", "--format=tar", f"{a.rev}:{src}")
             with tarfile.open(fileobj=io.BytesIO(raw)) as t:
                 for m in t.getmembers():
+                    if m.isdir() and sub == "." and m.name == "mutants":
+                        continue
                     f = t.extractfile(m) if m.isfile() else None
                     m.name = os.path.normpath(os.path.join(sub, m.name))
                     out.addfile(m, f)
     root = r["root"].rstrip("/")
-    script = (f"set -e; test ! -e {dest} || {{ echo {dest} exists; exit 1; }}; mkdir -p {dest}; "
-              f"tar -x -C {dest}; ln -s {root}/{r.get('image', 'temurin21.sif')} {dest}/temurin21.sif; "
-              f"ln -s {root}/{r.get('tla_jar', 'tla2tools.jar')} {dest}/tla2tools.jar; "
-              f"echo {a.rev} {sha} > {dest}/REVISION")
+    q = shlex.quote
+    # The JDK image and the jar are hard-linked (copied if the link fails), not
+    # symlinked: the jobs bind only RUN_ROOT into the container, so a symlink
+    # to the root would dangle inside it.
+    links = "".join(f"ln {q(root + '/' + src)} {q(dest + '/' + name)} 2>/dev/null || "
+                    f"cp {q(root + '/' + src)} {q(dest + '/' + name)}; "
+                    for src, name in ((r.get("image", "temurin21.sif"), "temurin21.sif"),
+                                      (r.get("tla_jar", "tla2tools.jar"), "tla2tools.jar")))
+    script = (f"set -e; test ! -e {q(dest)} || {{ echo {q(dest)} exists; exit 1; }}; mkdir -p {q(dest)}; "
+              f"tar -x -C {q(dest)}; {links}"
+              f"echo {q(a.rev)} {q(sha)} > {q(dest + '/REVISION')}")
     ssh(r, script, stdin=buf.getvalue())
     print(run)
 
@@ -90,8 +103,10 @@ def submit(a):
         flags += ["-p", r["partition"]]
     if r.get("account"):
         flags += ["-A", r["account"]]
-    args = " ".join([*flags, f"--export=ALL,RUN_ROOT={dest}", a.script, *a.args])
-    ssh(r, f"cd {dest} && RUN_ROOT={dest} sbatch {args}")
+    env = ["ALL", f"RUN_ROOT={dest}"] + a.env   # e.g. --env TLC_MODULE=RefSafety_e10
+    argv = [*flags, "--export=" + ",".join(env), a.script, *a.args]
+    q = shlex.quote
+    ssh(r, f"cd {q(dest)} && RUN_ROOT={q(dest)} sbatch " + " ".join(q(x) for x in argv))
 
 
 def fetch(a):
@@ -99,7 +114,7 @@ def fetch(a):
     dest = f"{r['root'].rstrip('/')}/{a.run}"
     os.makedirs(a.dest, exist_ok=True)
     tar = subprocess.run(["ssh", r["ssh"],
-                          f"cd {dest} && tar -c --exclude='states*' --exclude='*.sif' --exclude='*.jar' ."],
+                          f"cd {shlex.quote(dest)} && tar -c --exclude='states*' --exclude='*.sif' --exclude='*.jar' ."],
                          check=True, capture_output=True).stdout
     with tarfile.open(fileobj=io.BytesIO(tar)) as t:
         t.extractall(a.dest, filter="data")
@@ -112,6 +127,8 @@ def main():
     s = sub.add_parser("sync"); s.add_argument("area"); s.add_argument("--rev", default="HEAD")
     s.set_defaults(fn=sync)
     s = sub.add_parser("submit"); s.add_argument("run"); s.add_argument("script")
+    s.add_argument("--env", action="append", default=[], metavar="K=V",
+                   help="extra variable for the job (TLC_MODULE, TLC_EXTRA, ...); repeatable")
     s.add_argument("args", nargs="*"); s.set_defaults(fn=submit)
     s = sub.add_parser("fetch"); s.add_argument("run"); s.add_argument("dest"); s.set_defaults(fn=fetch)
     a = ap.parse_args()

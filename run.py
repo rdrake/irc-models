@@ -2,7 +2,7 @@
 """Record and check one suite against one server named in config.toml.
 
   run.py record SUITE --server NAME --out DIR [-- EXTRA RECORDER FLAGS]
-  run.py check  SUITE --in DIR [--tlc]
+  run.py check  SUITE --in DIR [--tlc] [-- EXTRA CHECKER FLAGS]
 
 SUITE is one of: handshake, registration, sasl, history-servers,
 labeled-response. `record` writes DIR/<suite>.jsonl; `check` writes
@@ -24,6 +24,8 @@ def recorder_argv(suite, s, out):
     host, port = s["host"], str(s["port"])
     label = ["--server-label", s.get("label", "")]
     acc = s.get("accounts", [])
+    if s.get("tls") and suite != "history-servers":
+        sys.exit(f"{suite}: its recorder speaks plain TCP only; point it at a plaintext port (tls = false)")
     if suite == "handshake":
         argv = py + [f"{HERE}/harness/handshake/drive.py", host, port, out,
                      "--settle", str(s.get("settle", 0.5))]
@@ -47,6 +49,8 @@ def recorder_argv(suite, s, out):
             argv.append("--tls")
         if s.get("password"):
             argv += ["--pass", s["password"]]
+        for role in s.get("history_sasl", []):        # "q=account:password"
+            argv += ["--sasl", role]
         return argv
     if suite == "labeled-response":
         return py + [f"{HERE}/harness/labeled-response/record_lr.py", host, port, out] + label
@@ -78,8 +82,13 @@ def main():
     ap.add_argument("--in", dest="indir")
     ap.add_argument("--tlc", action="store_true", help="also run the TLC trace check, where the checker has one")
     ap.add_argument("--config", default=os.path.join(HERE, "config.toml"))
-    ap.add_argument("extra", nargs="*")
-    a = ap.parse_args()
+    argv = sys.argv[1:]
+    extra = []
+    if "--" in argv:            # everything after -- goes to the recorder or checker untouched
+        k = argv.index("--")
+        argv, extra = argv[:k], argv[k + 1:]
+    a = ap.parse_args(argv)
+    a.extra = extra
     if a.action == "record":
         cfg = tomllib.load(open(a.config, "rb"))
         s = cfg.get("servers", {}).get(a.server)

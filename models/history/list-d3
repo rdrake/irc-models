@@ -48,7 +48,6 @@ Delivery V2CoverCompeting fail
 Delivery V2CoverModified fail
 Delivery V2CoverDelivFirst fail
 Delivery V2CoverNotice fail
-DM_LastOpened V2Obl fail
 DM_Reverse V2CompDef fail
 DM_IgnoreAck V2LossyObl fail
 DM_IgnoreErr V2Obl fail

@@ -81,8 +81,9 @@ added as a fixture.
 
 ## Contributing
 
-Run `ci/scrub.py` before pushing (or install `ci/pre-commit`). CI parses
-every module with SANY, runs the checkers' self-tests and the scrub.
+Run `ci/scrub.py` before pushing, or install the `ci/pre-commit` and
+`ci/commit-msg` hooks. CI scrubs every file and commit message, parses
+every module with SANY and runs the checkers' self-tests.
 
 ## Licence
 

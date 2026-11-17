@@ -1,8 +1,6 @@
 #!/bin/bash
-# Scrub the staged files before every commit (see ci/scrub.py).
+# Scrub what is about to be committed: the index's copy of each staged file,
+# not the working tree's (see ci/scrub.py).
 # Install: ln -s ../../ci/pre-commit .git/hooks/pre-commit
 # and point SCRUB_DENYLIST at your copy of the deny list.
-set -e
-files=$(git diff --cached --name-only --diff-filter=ACMR)
-[ -z "$files" ] && exit 0
-exec python3 ci/scrub.py $files
+exec python3 "$(git rev-parse --show-toplevel)/ci/scrub.py" --staged

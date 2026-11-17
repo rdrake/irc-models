@@ -13,10 +13,14 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Scrub
+        with:
+          fetch-depth: 0
+      - name: Scrub files and commit messages
         env:
           SCRUB_DENYLIST_TEXT: ${{ secrets.SCRUB_DENYLIST }}
-        run: python3 ci/scrub.py
+        run: |
+          python3 ci/scrub.py
+          python3 ci/scrub.py --log
 
   checkers:
     runs-on: ubuntu-24.04

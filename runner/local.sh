@@ -12,7 +12,7 @@ JAR="${TLA_JAR:-$HOME/tools/formal/tla2tools.jar}"
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 cp "$DIR"/*.tla "$DIR"/*.cfg "$WORK"/
-[ -d "$DIR/mutants" ] && cp "$DIR"/mutants/*.tla "$WORK"/ 2>/dev/null || true
+[ -d "$DIR/mutants" ] && cp "$DIR"/mutants/*.tla "$DIR"/mutants/*.cfg "$WORK"/ 2>/dev/null || true
 cd "$WORK"
 exec java -XX:+UseParallelGC -cp "$JAR" tlc2.TLC -workers auto -metadir states \
   -config "$CFG.cfg" "$MOD.tla" "$@"

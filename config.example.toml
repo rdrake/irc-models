@@ -6,14 +6,17 @@
 [servers.local]
 host = "127.0.0.1"
 port = 6667
-tls = false
+tls = false                    # only the history-servers recorder speaks TLS
 label = "my-ircd"              # free text written into every trace's meta record
 password = ""                  # connection password, for the PASS scenarios (skipped if empty)
 settle = 0.5                   # handshake: seconds of server silence that end a step
                                # (use about 2.5 for a server with fake lag)
-# Two test accounts, USER:PASSWORD, for SASL and for history's logged-in roles.
-# Use throwaway accounts on a test server: passwords never reach a trace.
+# Two test accounts, USER:PASSWORD, for the SASL recorder. Use throwaway
+# accounts on a test server: passwords never reach a trace.
 accounts = ["acct1:secret1", "acct2:secret2"]
+# history-servers only: log some of its roles in (q querier, a/b/c senders,
+# l late joiner), ROLE=USER:PASSWORD. Empty: every role is a guest.
+history_sasl = []
 # Shell commands that take the server's SASL backend away and bring it back,
 # for the cap-notify scenarios. Leave empty to skip them.
 backend_down = ""

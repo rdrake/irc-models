@@ -11,13 +11,16 @@ output, as the checkers write it:
   sasl/summary.json             check/sasl/summarize.py --json
   history-servers/check.json    check/history-servers/check.py --json
 
-For every item a suite checks (a trace, a scenario, a query), the item's
-verdict on the base is set against its verdict on the candidate. A failure
-present on the candidate only is NEW; one present on the base only is FIXED;
-a SASL reply sequence that differs is CHANGED. The exit status is 1 when any
-suite has a NEW failure, so a CI job or a release script can gate on it.
+For every item a suite checks (a trace, a scenario's connection, a kind of
+history deviation), the item's verdict on the base is set against its verdict
+on the candidate. A failure present on the candidate only is NEW; one present
+on the base only is FIXED. A SASL reply sequence that differs, or an item only
+one run has, is CHANGED: it has no pass/fail reading and needs a person. The
+exit status is 1 when any suite has a NEW failure, so a CI job or a release
+script can gate on it; read the CHANGED lines too.
 """
-import argparse, json, os, sys
+import argparse, json, os, re, sys
+from collections import Counter, defaultdict
 
 
 def load(path):
@@ -33,32 +36,53 @@ def handshake(path):
     return {k: v[0] for k, v in out.items()}, {k: v[1] for k, v in out.items()}
 
 
+def ordinal_keys(pairs):
+    """[(scenario, conn, value)] -> {"scenario#k": value}, k counting the
+    scenario's connections from 1 in connection order. The recorders number
+    connections with one counter for the whole run, so the same connection
+    can be c13 on one run and c15 on another (a skipped scenario before it);
+    its place within its own scenario does not move."""
+    by = defaultdict(list)
+    for name, conn, v in pairs:
+        by[name].append((int(re.sub(r"\D", "", conn) or 0), v))
+    return {f"{name}#{k}": v for name, rows in by.items()
+            for k, (_, v) in enumerate(sorted(rows), 1)}
+
+
 def registration(path):
     d = load(os.path.join(path, "check.json"))
-    verdict, detail = {}, {}
+    pairs = []
     for r in d["results"]:
-        key = f"{r['name']}/{r['conn']}"
         real = sorted(rule for rule, v in r["rules"].items() if not v["probe"])
-        verdict[key] = "ok" if not real else "finding:" + ",".join(real)
-        detail[key] = "; ".join(f"{rule}: {'; '.join(v['why'])}" for rule, v in r["rules"].items())
-    return verdict, detail
+        pairs.append((r["name"], r["conn"], "ok" if not real else "finding:" + ",".join(real)))
+    return ordinal_keys(pairs), {}
 
 
 def history_servers(path):
+    """One item per kind of deviation: (property, the query's role in the
+    matrix, the command with run id, msgids and timestamps blanked), counted.
+    Query indices are not stable across builds (follow-ups and walks depend
+    on the replies), so they are not used. Property counts are items too."""
     d = load(os.path.join(path, "check.json"))
-    verdict = {}
-    # One item per query index and property: the query matrix is the same on
-    # every run of drive.py, so indices line up across builds.
-    for dev in d.get("deviations", []):
-        verdict[f"{dev['prop']}#{dev['i']}"] = "fail"
+    runid = d.get("meta", {}).get("runid") or "\x00"
+
+    def shape(cmd):
+        cmd = cmd.replace(runid, "<run>")
+        cmd = re.sub(r"msgid=\S+", "msgid=<m>", cmd)
+        return re.sub(r"timestamp=\S+", "timestamp=<t>", cmd)
+
+    count = Counter(f"{dev['prop']} [{dev.get('note', '')}] {shape(dev.get('cmd', ''))}"
+                    for dev in d.get("deviations", []))
+    verdict = {k: n for k, n in count.items()}
     for prop, c in d.get("props", {}).items():
-        verdict[f"{prop} (counts)"] = f"pass={c['pass']} fail={c['fail']} na={c['na']}"
+        verdict[f"{prop} (fail count)"] = c["fail"]
     return verdict, {}
 
 
 def sasl(path):
     d = load(os.path.join(path, "summary.json"))
-    return {k: " ".join(v) for k, v in d.items()}, {}
+    pairs = [(k.rsplit("/", 1)[0], k.rsplit("/", 1)[1], " ".join(v)) for k, v in d.items()]
+    return ordinal_keys(pairs), {}
 
 
 SUITES = {
@@ -78,18 +102,15 @@ def compare(name, base_dir, cand_dir):
         bv, cv = b.get(key, "(absent)"), c.get(key, "(absent)")
         if bv == cv:
             continue
-        if ok is not None:
-            if ok(bv) and not ok(cv):
-                kind = "NEW"
-            elif not ok(bv) and ok(cv):
-                kind = "FIXED"
-            else:
-                kind = "CHANGED"
-        elif name == "history-servers" and key.endswith("(counts)"):
-            kind = "CHANGED"
-        elif name == "history-servers":
-            kind = "NEW" if cv == "fail" else "FIXED"
+        if name == "history-servers":
+            # values are failure counts: more on the candidate is NEW
+            nb, nc = (bv if isinstance(bv, int) else 0), (cv if isinstance(cv, int) else 0)
+            kind = "NEW" if nc > nb else "FIXED"
+        elif ok is not None and bv != "(absent)" and cv != "(absent)":
+            kind = "NEW" if ok(bv) and not ok(cv) else "FIXED" if ok(cv) and not ok(bv) else "CHANGED"
         else:
+            # SASL reply sequences, and items only one run has: no pass/fail
+            # reading, reported for a person to judge
             kind = "CHANGED"
         rows.append({"suite": name, "item": key, "kind": kind, "base": bv, "candidate": cv})
     return {"suite": name, "items_base": len(b), "items_candidate": len(c), "differences": rows}

@@ -2,6 +2,9 @@
 """Refuse files that must not be published.
 
   ci/scrub.py [FILE ...]        (no files: every file git tracks)
+  ci/scrub.py --staged          the index's copy of every staged file (pre-commit)
+  ci/scrub.py --message FILE    a commit message (commit-msg hook)
+  ci/scrub.py --log [RANGE]     every commit message in RANGE (default: all)
 
 Two kinds of rule:
 - built in, below: personal absolute paths, assistant attribution and
@@ -14,7 +17,9 @@ Two kinds of rule:
   never live here.
 
 Exit status 1 if any line matches, with file:line and the rule for each.
-Install as a pre-commit hook with: ln -s ../../ci/pre-commit .git/hooks/pre-commit
+Install the hooks with:
+  ln -s ../../ci/pre-commit .git/hooks/pre-commit
+  ln -s ../../ci/commit-msg .git/hooks/commit-msg
 """
 import os, re, subprocess, sys
 
@@ -48,26 +53,49 @@ def deny_list():
     return rules
 
 
-def main():
-    files = sys.argv[1:] or subprocess.check_output(["git", "ls-files"], text=True).split("\n")
-    rules = [(re.compile(p), why) for p, why in BUILTIN + deny_list()]
-    if not any(why == "deny list" for _, why in rules):
-        print("scrub: no deny list given (SCRUB_DENYLIST or SCRUB_DENYLIST_TEXT); built-in rules only",
-              file=sys.stderr)
+def sources(argv):
+    """Yield (label, text) for what argv asks to scan."""
     me = os.path.relpath(__file__)
-    bad = 0
+    if argv[:1] == ["--message"]:
+        yield argv[1], open(argv[1], encoding="utf-8", errors="replace").read()
+        return
+    if argv[:1] == ["--log"]:
+        rng = argv[1:2] or []
+        out = subprocess.check_output(["git", "log", "--format=%H%x00%B%x01", *rng], text=True)
+        for entry in out.split("\x01"):
+            if "\x00" in entry:
+                sha, body = entry.strip("\n").split("\x00", 1)
+                yield f"commit {sha[:10]}", body
+        return
+    if argv[:1] == ["--staged"]:
+        names = subprocess.check_output(["git", "diff", "--cached", "--name-only", "-z",
+                                         "--diff-filter=ACMR"], text=True).split("\0")
+        for f in names:
+            if f and not f.endswith(SKIP_SUFFIXES) and os.path.relpath(f) != me:
+                yield f, subprocess.check_output(["git", "show", ":" + f]).decode("utf-8", "replace")
+        return
+    files = argv or subprocess.check_output(["git", "ls-files", "-z"], text=True).split("\0")
     for f in files:
         if not f or not os.path.isfile(f) or f.endswith(SKIP_SUFFIXES) or os.path.relpath(f) == me:
             continue
         try:
-            lines = open(f, encoding="utf-8").read().splitlines()
+            yield f, open(f, encoding="utf-8").read()
         except UnicodeDecodeError:
             continue
-        for n, line in enumerate(lines, 1):
+
+
+def main():
+    rules = [(re.compile(p), why) for p, why in BUILTIN + deny_list()]
+    if not any(why == "deny list" for _, why in rules):
+        print("scrub: no deny list given (SCRUB_DENYLIST or SCRUB_DENYLIST_TEXT); built-in rules only",
+              file=sys.stderr)
+    bad = 0
+    for label, text in sources(sys.argv[1:]):
+        for n, line in enumerate(text.splitlines(), 1):
             for rx, why in rules:
                 if rx.search(line):
                     # Never echo a deny-list match: the line may hold what is being kept private.
-                    print(f"{f}:{n}: {why}" + ("" if why == "deny list" else f": {line.strip()[:120]}"))
+                    print(f"{label}:{n}: {why}" + ("" if why == "deny list" else f": {line.strip()[:120]}"))
                     bad += 1
                     break
     if bad:

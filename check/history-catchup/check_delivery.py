@@ -227,7 +227,11 @@ def main():
     confs = (sys.argv[sys.argv.index("--configs") + 1].split(",") if "--configs" in sys.argv
              else ["F0D0", "F0D1", "F1D0", "F1D1"])
     os.makedirs(wd, exist_ok=True)
-    scen = {json.loads(l)["name"]: json.loads(l) for l in open(os.path.join(HERE, "scenarios.jsonl"))}
+    # Beside this script in a runner folder; in the repository it is in harness/history-catchup.
+    spath = next((p for p in (os.path.join(HERE, "scenarios.jsonl"),
+                              os.path.join(HERE, "..", "..", "harness", "history-catchup", "scenarios.jsonl"))
+                  if os.path.exists(p)), os.path.join(HERE, "scenarios.jsonl"))
+    scen = {json.loads(l)["name"]: json.loads(l) for l in open(spath)}
     obs = [json.loads(l) for l in open(obsf) if l.strip()]
     jobs, res = [], []
     for o in obs:

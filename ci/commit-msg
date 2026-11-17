@@ -1,0 +1,4 @@
+#!/bin/bash
+# Scrub the commit message (see ci/scrub.py).
+# Install: ln -s ../../ci/commit-msg .git/hooks/commit-msg
+exec python3 "$(git rev-parse --show-toplevel)/ci/scrub.py" --message "$1"
